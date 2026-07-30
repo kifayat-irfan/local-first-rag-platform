@@ -1,0 +1,28 @@
+# Config & validation
+pydantic>=2.6
+pydantic-settings>=2.2
+pyyaml>=6.0
+
+# Logging
+structlog>=24.1
+
+# PDF extraction
+pypdf>=4.0
+pdfplumber>=0.11
+
+# Embeddings + vector store
+sentence-transformers>=2.5
+chromadb>=0.4.24
+
+# Retrieval
+rank-bm25>=0.2.2
+
+# UI
+streamlit>=1.36
+
+# Caching (in-memory, no Redis needed at this scale)
+cachetools>=5.3
+
+# LLM client (Ollama over HTTP) + misc
+aiohttp>=3.9
+rich>=13.7

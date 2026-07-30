@@ -1,0 +1,40 @@
+services:
+  app:
+    build: .
+    ports:
+      - "8501:8501"
+    volumes:
+      # Named volume, not a bind mount to the host — persists company data
+      # (PDFs, vector stores, manifests) across container restarts without
+      # depending on any particular host path.
+      - rag_data:/app/data
+    environment:
+      - RAG_OLLAMA_BASE_URL=http://ollama:11434
+      - GROQ_API_KEY=${GROQ_API_KEY:-}
+    depends_on:
+      - ollama
+    restart: unless-stopped
+
+  # Optional: run Ollama inside Compose too, so `docker compose up` gives a
+  # fully self-contained stack. If you already run Ollama on the host, you
+  # can delete this service and point RAG_OLLAMA_BASE_URL at the host
+  # instead (e.g. http://host.docker.internal:11434 on Mac/Windows).
+  ollama:
+    image: ollama/ollama:latest
+    volumes:
+      - ollama_models:/root/.ollama
+    ports:
+      - "11434:11434"
+    restart: unless-stopped
+    # GPU acceleration (uncomment if you have an NVIDIA GPU + nvidia-container-toolkit):
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
+
+volumes:
+  rag_data:
+  ollama_models:

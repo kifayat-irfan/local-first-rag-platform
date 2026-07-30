@@ -1,0 +1,9 @@
+# Only needed for scripts/scrape_docs_to_pdf.py — a one-off tool to convert
+# a documentation website into PDFs before ingestion. Not a dependency of
+# the RAG platform itself, so it's kept separate from requirements.txt.
+#
+# Install with:
+#   pip install -r requirements-scraping.txt
+#   playwright install chromium
+
+playwright>=1.44

@@ -1,0 +1,14 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.git/
+.gitignore
+data/companies/
+data/registry.json
+data/chat_history.sqlite3
+tests/
+.env
+.streamlit/secrets.toml
+*.md
+LICENSE

@@ -1,0 +1,26 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+.pytest_cache/
+.coverage
+*.egg-info/
+
+# Per-company data — regenerate via scripts, never commit
+data/companies/*/raw_pdfs/
+data/companies/*/clean/
+data/companies/*/manifest.jsonl
+data/companies/*/checkpoint.json
+data/companies/*/vector_store/
+data/registry.json
+data/chat_history.sqlite3
+
+# Actual per-company configs may contain internal paths/naming — keep the
+# template tracked, but don't force company configs into version control.
+configs/*.yaml
+!configs/template.yaml
+
+.env
+
+# Streamlit secrets (used for Streamlit Cloud deployment) — never commit real keys
+.streamlit/secrets.toml

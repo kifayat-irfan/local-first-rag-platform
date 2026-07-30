@@ -1,0 +1,39 @@
+[project]
+name = "rag-platform"
+version = "0.2.0"
+description = "Local-first, multi-tenant RAG platform for PDF documentation"
+requires-python = ">=3.11"
+readme = "README.md"
+
+dependencies = [
+    "pydantic>=2.6",
+    "pydantic-settings>=2.2",
+    "pyyaml>=6.0",
+    "structlog>=24.1",
+    "pypdf>=4.0",
+    "pdfplumber>=0.11",
+    "sentence-transformers>=2.5",
+    "chromadb>=0.4.24",
+    "rank-bm25>=0.2.2",
+    "aiohttp>=3.9",
+    "rich>=13.7",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+    "pytest-cov>=4.1",
+    "reportlab>=4.1",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
