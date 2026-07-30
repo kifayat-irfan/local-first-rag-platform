@@ -36,7 +36,7 @@ required.
    query  ──▶  retriever.py (dense + BM25, RRF)  ──▶  reranker.py (cross-encoder)
                                                           │
                                                           ▼
-                                          qa_pipeline.py  ──▶  llm.py (Ollama)
+                                          qa_pipeline.py  ──▶  llm.py (Ollama / Groq)
                                           (retrieve → rerank → generate → cite)
 ```
 
