@@ -2,8 +2,9 @@
 
 ![Python](https://img.shields.io/badge/python-3.11%2B-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
-![Tests](https://img.shields.io/badge/tests-24%20passing-brightgreen)
+![Tests](https://img.shields.io/badge/tests-30%20passing-brightgreen)
 ![Streamlit](https://img.shields.io/badge/UI-Streamlit-FF4B4B)
+![Docker](https://img.shields.io/badge/Docker-ready-2496ED)
 
 A local-first, offline-capable RAG (Retrieval-Augmented Generation) platform
 for company engineering documentation. Ingests PDFs, isolates data per
@@ -61,9 +62,12 @@ Enterprise_RAG_Platform/
 │   ├── vector_store.py       # ChromaDB, one instance per company
 │   ├── retriever.py          # BM25 + dense hybrid search (RRF)
 │   ├── reranker.py           # cross-encoder reranking
-│   ├── llm.py                # Ollama client
+│   ├── llm.py                # Ollama client (Local mode) + Groq client (Public mode)
 │   ├── qa_pipeline.py        # retrieve → rerank → generate → cite
-│   └── company_registry.py   # company CRUD over registry.json
+│   ├── company_registry.py   # company CRUD over registry.json
+│   ├── cache.py              # in-memory TTL+LRU query cache (cachetools)
+│   ├── chat_history.py       # SQLite-backed persistent chat history
+│   └── voice.py              # Groq Whisper client for voice input
 ├── configs/
 │   ├── template.yaml         # defaults every company config inherits
 │   └── company_a.yaml        # example company config
@@ -72,17 +76,22 @@ Enterprise_RAG_Platform/
 │   ├── query_company.py        # per-company query CLI
 │   ├── manage_companies.py     # list/add/info/remove/update
 │   ├── check_manifest.py       # audit manifest vs disk
-│   └── reset_data.py           # wipe a company's derived state
+│   ├── reset_data.py           # wipe a company's derived state
+│   └── scrape_docs_to_pdf.py   # crawl a docs website -> PDFs (Playwright, JS-rendered aware)
 ├── tests/
 │   ├── conftest.py
 │   ├── test_pdf_extractor.py
 │   ├── test_company_registry.py
 │   ├── test_config_loader.py
-│   └── test_integration.py
+│   ├── test_integration.py
+│   └── test_chat_history_and_cache.py
 ├── data/
 │   ├── companies/{id}/       # isolated per-tenant data (gitignored)
-│   └── registry.json         # global company registry (gitignored)
-├── pyproject.toml, requirements.txt, requirements-dev.txt
+│   ├── registry.json         # global company registry (gitignored)
+│   └── chat_history.sqlite3  # global chat history, per-row company_id (gitignored)
+├── streamlit_app.py          # chat UI: multi-company, Local/Public mode toggle, compare, history, voice
+├── Dockerfile, docker-compose.yml, .dockerignore
+├── pyproject.toml, requirements.txt, requirements-dev.txt, requirements-scraping.txt
 ├── .env.example, .gitignore, Makefile
 └── README.md
 ```
@@ -152,6 +161,34 @@ python scripts/query_company.py --company company_a --query "rollback steps" --n
 
 Makefile shortcuts: `make ingest COMPANY=company_a`, `make query COMPANY=company_a QUERY="..."`, `make companies`, `make check-manifest COMPANY=company_a`, `make reset COMPANY=company_a`.
 
+## Scraping a Documentation Website into PDFs
+
+If a company's docs live on a website rather than as downloadable PDFs,
+`scripts/scrape_docs_to_pdf.py` crawls it and saves every page as a PDF —
+the automated equivalent of visiting each page and doing Ctrl+P.
+
+```bash
+pip install -r requirements-scraping.txt
+playwright install chromium
+
+python scripts/scrape_docs_to_pdf.py \
+    --url https://example.com/docs \
+    --prefix /docs \
+    --out data/companies/example/raw_pdfs \
+    --max-pages 200
+```
+
+Uses a real headless browser (Playwright), not a plain HTTP request, for
+both discovering links and exporting PDFs — most modern documentation
+sites (Next.js, Docusaurus, Mintlify, VitePress) render their navigation
+with client-side JavaScript, which a plain GET request never sees. Stays
+within the given domain + path prefix, and crawls with bounded concurrency.
+Only use this on sites you own or have explicit permission to scrape.
+
+Kept as a separate optional dependency (`requirements-scraping.txt`) since
+Playwright + a bundled Chromium binary (~150–300MB) is only needed for this
+one-off step, not for running the RAG platform itself.
+
 ## Streamlit UI
 
 A full chat-style UI is included (`streamlit_app.py`) — company switcher, PDF
@@ -168,7 +205,9 @@ Opens at `http://localhost:8501`. Three tabs once a company is selected:
 - **💬 Chat** — ask questions, optionally record audio instead of typing
   (needs a free [Groq API key](https://console.groq.com/keys) — see below).
   Retrieval + citations work with no setup; check "Generate LLM answer" to
-  also call Ollama for a synthesized response.
+  also generate a synthesized response. Two LLM modes: **🔒 Local** (Ollama,
+  fully offline) or **🌐 Public** (Groq's hosted LLM, free tier — works even
+  without a local Ollama, e.g. on a deployed demo). Switch per-question.
 - **🔍 Compare Companies** — ask the same question across 2+ companies at
   once, answers shown side by side. Useful for "how does GitLab's policy on
   X differ from Basecamp's?" style questions.
@@ -241,11 +280,12 @@ make test
 PYTHONPATH=src pytest tests/ -v
 ```
 
-24 tests across 4 files, all passing:
+30 tests across 5 files, all passing:
 - `test_pdf_extractor.py` — heading/code-block detection, page markers, scanned-PDF flagging
 - `test_company_registry.py` — add/list/info/remove/duplicate/not-found
 - `test_config_loader.py` — YAML template inheritance, validation errors, tenant isolation
 - `test_integration.py` — full pipeline (extract → chunk → index → retrieve) against a synthetic reportlab-generated PDF, plus scanned-PDF skip behavior
+- `test_chat_history_and_cache.py` — chat history isolation/search/star/delete, cache hit/miss behavior
 
 Integration and unit tests use a deterministic fake embedder instead of
 downloading the real BGE model, so the suite runs fully offline and in
