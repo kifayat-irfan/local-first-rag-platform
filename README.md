@@ -8,10 +8,26 @@
 
 A local-first, offline-capable RAG (Retrieval-Augmented Generation) platform
 for company engineering documentation. Ingests PDFs, isolates data per
-company, and answers questions with page-accurate citations — no cloud APIs
-required.
+company, and answers questions with page-accurate citations. Runs fully
+offline via Ollama by default, with optional Groq fallback (free tier) for
+voice input and public deployments.
 
-**[Live demo](#) · [Screenshots below](#screenshots) · Built with pypdf, pdfplumber, BGE embeddings, ChromaDB, BM25, cross-encoder reranking, Ollama, and Streamlit**
+**[Screenshots below](#screenshots) · Built with pypdf, pdfplumber, BGE embeddings, ChromaDB, BM25, cross-encoder reranking, Ollama, Groq, and Streamlit**
+
+## Screenshots
+
+<!--
+  Add 2-3 screenshots here before publishing, e.g.:
+
+  ![Chat with citations](screenshots/chat.png)
+  ![Compare Companies](screenshots/compare.png)
+  ![Company sidebar](screenshots/sidebar.png)
+
+  Put the image files in a `screenshots/` folder at the repo root — GitHub
+  renders them automatically once referenced like this in the README.
+-->
+
+*(Screenshots coming — see the Streamlit UI section below for what to capture.)*
 
 ## Architecture
 
@@ -119,6 +135,11 @@ Retrieval-only usage (`--no-llm` on `query_company.py`) doesn't need Ollama.
 
 ## Onboarding a New Company (3 steps)
 
+> Prefer clicking over typing? The [Streamlit UI](#streamlit-ui) below does
+> all three of these steps from the sidebar — register, upload PDFs, and
+> ingest — with no terminal commands needed. The CLI steps here are for
+> scripting, CI, or bulk onboarding.
+
 **1. Register the company** — creates its isolated data directories:
 ```bash
 python scripts/manage_companies.py add company_a --name "Acme Corp"
@@ -159,8 +180,9 @@ python scripts/query_company.py --company company_a --query "rollback steps" --n
 | `scripts/manage_companies.py update ID` | Refresh registry stats from the manifest on disk. |
 | `scripts/check_manifest.py --company ID` | Audit manifest vs disk; exits non-zero on drift (CI-friendly). |
 | `scripts/reset_data.py --company ID [--yes]` | Wipe derived state (clean/, manifest, checkpoint, vector store). Raw PDFs untouched. |
+| `scripts/scrape_docs_to_pdf.py --url URL --out DIR` | Crawl a docs website into PDFs (see [Scraping a Documentation Website](#scraping-a-documentation-website-into-pdfs)). |
 
-Makefile shortcuts: `make ingest COMPANY=company_a`, `make query COMPANY=company_a QUERY="..."`, `make companies`, `make check-manifest COMPANY=company_a`, `make reset COMPANY=company_a`.
+Makefile shortcuts: `make ingest COMPANY=company_a`, `make query COMPANY=company_a QUERY="..."`, `make companies`, `make check-manifest COMPANY=company_a`, `make reset COMPANY=company_a`, `make scrape-docs URL=... PREFIX=/docs OUT=data/companies/example/raw_pdfs`.
 
 ## Scraping a Documentation Website into PDFs
 
@@ -355,15 +377,21 @@ downloads ~130MB from Hugging Face).
 12. **Multi-turn memory via query condensing, not raw context stuffing:** a
     bare follow-up like "how do I fix it?" embeds and retrieves poorly on
     its own — nothing in the vector alone indicates what "it" refers to.
-    Before retrieval, recent conversation history is used to rewrite the
-    follow-up into a standalone question (one extra, cheap LLM call, made
-    only when history exists). Recent turns are also included in the final
-    generation prompt for continuity, with the system prompt explicit that
-    prior *answers* are context for understanding the question, never a
-    source of facts on their own — otherwise multi-turn memory would open
-    a second path for the hallucination that decision 11 just closed. If
-    the condensing call itself fails, the pipeline falls back to the raw
-    follow-up rather than erroring out.
+    Before retrieval, conversation history is used to rewrite the follow-up
+    into a standalone question (one extra, cheap LLM call, made only when
+    history exists). Only the single *immediately preceding* turn is
+    included in the final generation prompt, not several — an earlier
+    2-turn version caused a real bug where the model blended a much-earlier,
+    unrelated topic (a "room conflict" question) into the answer for a
+    completely different follow-up (a CSV-import question), because that
+    unrelated topic happened to be the second-most-recent turn. One turn is
+    enough for legitimate pronoun/context resolution without dragging in
+    whatever else the conversation covered several messages back. The
+    system prompt also explicitly forbids treating prior *answers* as a
+    source of facts — only as context for understanding the current
+    question — otherwise multi-turn memory reopens the same hallucination
+    path decision 11 closed. If the condensing call itself fails, the
+    pipeline falls back to the raw follow-up rather than erroring out.
 
 ## Troubleshooting
 
