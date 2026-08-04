@@ -358,6 +358,7 @@ def answer_question(
     groq_api_key: str = "",
     groq_model: str = "",
     use_cache: bool = True,
+    conversation_history: Optional[list[tuple[str, str]]] = None,
 ) -> tuple[str, list[dict]]:
     """
     Shared retrieve -> rerank -> (optionally) generate path.
@@ -367,7 +368,17 @@ def answer_question(
     Ollama isn't reachable (e.g. a deployed demo). Voice transcription
     always uses Groq regardless of this toggle; this setting only affects
     which backend generates the final answer.
+
+    conversation_history: prior (question, answer) turns in this chat
+    session, used by QAPipeline to resolve vague follow-ups ("how do I fix
+    it?") into standalone retrieval queries. When present, caching is
+    skipped — a follow-up's correct answer depends on which conversation
+    it's part of, which the cache key doesn't capture, so serving a cached
+    answer from a different conversation would be wrong here.
     """
+    history = conversation_history or []
+    effective_use_cache = use_cache and not history
+
     cache = get_cache(maxsize=256, ttl_seconds=3600)
     key = cache_key(company_id, question, top_k, use_llm, llm_mode, ollama_model, groq_model)
 
@@ -399,7 +410,7 @@ def answer_question(
 
         qa = QAPipeline(retriever=retriever, reranker=reranker, llm_client=llm, rerank_top_k=top_k)
         try:
-            result = asyncio.run(qa.answer(question))
+            result = asyncio.run(qa.answer(question, conversation_history=history))
             answer = result.answer
         except Exception as exc:  # noqa: BLE001
             answer = (
@@ -409,7 +420,7 @@ def answer_question(
             )
         return {"answer": answer, "citations": citations}
 
-    if use_cache:
+    if effective_use_cache:
         result, was_hit = cached_call(cache, key, compute)
     else:
         result, was_hit = compute(), False
@@ -500,6 +511,10 @@ def render_chat(company_id: str) -> None:
     if not question:
         return
 
+    # Pull prior turns BEFORE appending the current question, so the current
+    # question never accidentally appears in its own conversation history.
+    conversation_history = extract_conversation_pairs(st.session_state[history_key])
+
     st.session_state[history_key].append({"role": "user", "content": question})
     with st.chat_message("user"):
         st.markdown(question)
@@ -510,6 +525,7 @@ def render_chat(company_id: str) -> None:
                 company_id, company_config, vector_store, question, top_k, use_llm,
                 llm_mode=llm_mode, ollama_url=ollama_url, ollama_model=ollama_model,
                 groq_api_key=settings.groq_api_key, groq_model=groq_model,
+                conversation_history=conversation_history,
             )
         st.markdown(answer)
         render_citations(citations)
@@ -589,6 +605,25 @@ def render_history(company_id: str) -> None:
             if c2.button("Delete", key=f"del_{entry.id}"):
                 store.delete(entry.id)
                 st.rerun()
+
+
+def extract_conversation_pairs(messages: list[dict]) -> list[tuple[str, str]]:
+    """
+    Walks session_state's flat [user, assistant, user, assistant, ...]
+    message list and pairs them into (question, answer) tuples for
+    QAPipeline's conversation_history. Any trailing unpaired user message
+    (shouldn't normally happen — an assistant turn always follows) is
+    dropped rather than guessed at.
+    """
+    pairs: list[tuple[str, str]] = []
+    pending_question: Optional[str] = None
+    for msg in messages:
+        if msg["role"] == "user":
+            pending_question = msg["content"]
+        elif msg["role"] == "assistant" and pending_question is not None:
+            pairs.append((pending_question, msg["content"]))
+            pending_question = None
+    return pairs
 
 
 def build_citations(ranked: list[dict]) -> list[dict]:
